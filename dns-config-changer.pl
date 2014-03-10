@@ -22,11 +22,21 @@
 
 use Carp;
 use Getopt::Std;
-use Sys::Syslog qw(:DEFAULT :macros setlogsock);
+use Sys::Syslog qw(:DEFAULT setlogsock);
 use Net::Ping;
+use File::Spec;
 use strict;
 
-my $VERSION = "0.9";
+my $VERSION = "0.9.1";
+
+use constant {
+    LOG_DEBUG   => 'debug',
+    LOG_INFO    => 'info',
+    LOG_NOTICE  => 'notice',
+    LOG_WARNING => 'warning',
+    LOG_ERR     => 'error',
+    LOG_CRIT    => 'crit',
+};
 
 sub check_link;
 sub check_dns;
@@ -41,10 +51,12 @@ our $opt_d = 0;
 our $opt_S = 0;
 our $opt_V = 0;
 our $opt_B = 0;
+our $opt_C = 0;
 our $opt_n = 0;
 
 my $progname   = ( split( /\//, $0 ) )[-1];
-my $BASEDIR    = "/etc";
+my $CONFDIR    = "/var/named";
+my $BASEDIR    = "/var/named";
 my $NAMED_LINK = '/named.conf';
 my $NAMED_PRI  = '/named.primary.conf';
 my $NAMED_ALT  = '/named.alternate.conf';
@@ -56,12 +68,13 @@ my $TARGET     = "8.8.8.8";
 my $LINK       = 0;
 my $DNS        = 1;
 
-getopts('nVShdt:B:');
+getopts('nVShdt:B:C:');
 
 if ($opt_h) {
     print "$progname [options]\n";
     print "\tOptions:\n";
     print "\t-t TARGET defaults to '$TARGET'\n";
+    print "\t-C Config directory defaults to '$CONFDIR'\n";
     print "\t-B Base directory defaults to '$BASEDIR'\n";
     print "\t-V print version info\n";
     print "\t-S print log to STDOUT\n";
@@ -77,7 +90,7 @@ if ($opt_V) {
 }
 
 if ($opt_d) {
-    $DEBUG = 1;
+    $DEBUG     = 1;
     $LOG_LEVEL = LOG_DEBUG;
 }
 
@@ -89,6 +102,10 @@ if ($opt_B) {
     $BASEDIR = $opt_B;
 }
 
+if ($opt_C) {
+    $CONFDIR = $opt_C;
+}
+
 if ($opt_S) {
     $STDOUT = 1;
 }
@@ -97,7 +114,7 @@ if ($opt_n) {
     $DRY_RUN = 1;
 }
 
-my $NAMED_CONF     = $BASEDIR . $NAMED_LINK;
+my $NAMED_CONF     = $CONFDIR . $NAMED_LINK;
 my $PRI_NAMED_CONF = $BASEDIR . $NAMED_PRI;
 my $ALT_NAMED_CONF = $BASEDIR . $NAMED_ALT;
 
@@ -113,8 +130,9 @@ else {
 
     eval {
         setlogsock('unix');
-        openlog( $progname, "ndelay,pid", LOG_LOCAL0 );
-	setlogmask( LOG_UPTO($LOG_LEVEL) );
+        openlog( $progname, "ndelay,pid" );
+
+        #setlogmask( LOG_UPTO($LOG_LEVEL) );
         check_link();
         check_dns();
         action();
@@ -150,7 +168,7 @@ sub action {
         # Fail Over - Link Down, and not failed over
         #
         LOG( LOG_WARNING, "DNS FAILOVER - $TARGET DOWN\n" );
-        failover() if ( ! $DRY_RUN );
+        failover() if ( !$DRY_RUN );
     }
     elsif ( $LINK && ( !$DNS ) ) {
 
@@ -158,7 +176,7 @@ sub action {
         # Fail Back - Link UP, but in fail over mode
         #
         LOG( LOG_WARNING, "DNS FAILBACK - $TARGET UP\n" );
-        failback() if ( ! $DRY_RUN );
+        failback() if ( !$DRY_RUN );
     }
     else {
         confess "Should not be here! LINK:$LINK DNS:$DNS\n";
@@ -188,6 +206,8 @@ sub check_dns {
 
     my $file = readlink($NAMED_CONF);
 
+    $file = $BASEDIR . '/' . $file;
+
     LOG( LOG_DEBUG, "DNS CHECK - linked file: $file" );
 
     if ( $PRI_NAMED_CONF eq $file ) {
@@ -197,6 +217,11 @@ sub check_dns {
         $DNS = 0;
     }
     else {
+        LOG( LOG_DEBUG, "NAMED: $NAMED_CONF" );
+        LOG( LOG_DEBUG, "LINK: $file" );
+        LOG( LOG_DEBUG, "PRI: $PRI_NAMED_CONF" );
+        LOG( LOG_DEBUG, "ALT: $ALT_NAMED_CONF" );
+
         confess $NAMED_CONF . " points to $file\n";
     }
 
@@ -242,3 +267,4 @@ sub LOG($$) {
         syslog( $prio, $msg );
     }
 }
+
