@@ -27,7 +27,7 @@ use Net::Ping;
 use File::Spec;
 use strict;
 
-my $VERSION = "0.9.1";
+my $VERSION = "0.9";
 
 use constant {
     LOG_DEBUG   => 'debug',
@@ -133,7 +133,14 @@ else {
         openlog( $progname, "ndelay,pid" );
 
         #setlogmask( LOG_UPTO($LOG_LEVEL) );
-        check_link();
+        check_link() 
+	|| check_link()
+        || check_link()
+        || check_link()
+        || check_link()
+        || check_link()
+	;
+
         check_dns();
         action();
         closelog;
@@ -206,7 +213,7 @@ sub check_dns {
 
     my $file = readlink($NAMED_CONF);
 
-    $file = $BASEDIR . '/' . $file;
+    # $file = $BASEDIR . '/' . $file;
 
     LOG( LOG_DEBUG, "DNS CHECK - linked file: $file" );
 
