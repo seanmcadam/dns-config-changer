@@ -28,6 +28,8 @@ use File::Spec;
 use strict;
 
 my $VERSION = "0.9";
+my $PING_TIMEOUT = 5;
+my $CHECK_COUNT_TIMES = 60;
 
 use constant {
     LOG_DEBUG   => 'debug',
@@ -132,14 +134,15 @@ else {
         setlogsock('unix');
         openlog( $progname, "ndelay,pid" );
 
+	my $count = $CHECK_COUNT_TIMES;
         #setlogmask( LOG_UPTO($LOG_LEVEL) );
-        check_link() 
-	|| check_link()
-        || check_link()
-        || check_link()
-        || check_link()
-        || check_link()
-	;
+
+	#
+	# Run Check Count times, or until it returns True
+	#
+	while( $count-- ) {
+        	if( check_link() ) { last; }
+	}
 
         check_dns();
         action();
@@ -193,17 +196,19 @@ sub action {
 
 # ---------------------------------------------------------
 sub check_link {
-    my $P = Net::Ping->new("icmp");
+    my $P = Net::Ping->new("icmp", $PING_TIMEOUT);
 
     LOG( LOG_DEBUG, "CHECK LINK $TARGET" );
 
     if ( $P->ping($TARGET) ) {
         $LINK = 1;
-        LOG( LOG_DEBUG, "LINK UP" );
+        LOG( LOG_DEBUG, "LINK UP: $TARGET" );
+	return 1;
     }
     else {
         $LINK = 0;
         LOG( LOG_DEBUG, "LINK DOWN: $TARGET" );
+	return 0;
     }
 
 }
@@ -266,12 +271,13 @@ sub LOG($$) {
     my $prio = shift;
     my $msg  = shift;
 
-    if ($STDOUT) {
-        print $msg . "\n";
+    if ( ( $prio == LOG_DEBUG ) && !$DEBUG ) { return; }
+
+    if ( $STDOUT || ( $prio eq LOG_WARNING ) || ( $prio eq LOG_ERR ) || ( $prio eq LOG_CRIT ) ) {
+        print( $msg . "\n" );
     }
-    else {
-        if ( ( $prio == LOG_DEBUG ) && !$DEBUG ) { return; }
-        syslog( $prio, $msg );
-    }
+
+    syslog( $prio, $msg );
+
 }
 
